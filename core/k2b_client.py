@@ -23,6 +23,7 @@ TODO(확인 필요, k2b_selectors.py 주석 참고):
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import Callable
 from pathlib import Path
 
@@ -36,6 +37,14 @@ LogFn = Callable[[str], None]
 
 def _noop_log(msg: str) -> None:
     pass
+
+
+class ReportModificationExpiredError(Exception):
+    """"보고서 수정가능 기한"이 지나 보고서 파일첨부 버튼이 비활성화된 경우.
+
+    이 기한은 기술지도일 이후 7일까지다(실화면 안내문). 기존 차수를 그대로 열어
+    편집하면 이 기한이 이미 지나있을 수 있다 -- 새 차수로 추가하면 기술지도일이 오늘
+    날짜로 자동 설정돼 항상 기한 안에 들어온다."""
 
 
 class K2BClient:
@@ -253,9 +262,27 @@ class K2BClient:
         """12-1에서 생성된 실제 결과보고서(PDF/hwpx) 파일을 "보고서" 섹션에 첨부한다.
 
         주의(CONFIRMED, 실제 화면에서 확인): 기술지도일 이후 7일이 지나면 보고서 수정이
-        불가능해진다 -- 제출 자동화는 이 기한 안에 실행되어야 한다."""
-        self.log(f"보고서 파일 첨부 중: {file_path}")
+        불가능해지고 이 버튼도 비활성화된다 -- 클릭해도 아무 반응 없이 파일선택창이 안
+        뜬다(실사용 중 재현: 기존 차수를 그대로 열어 편집했다가 기한이 지나 있어서
+        "Timeout ... waiting for event filechooser"만 나고 원인을 스크롤 문제로 착각한
+        적 있음 -- 진짜 원인은 이 기한이었다). 그래서 실제 첨부 전에 기한을 먼저 확인해
+        지났으면 명확한 예외를 던진다."""
         page = self.page
+        deadline_text = page.locator(sel.REPORT_MODIFIABLE_UNTIL_INPUT_ID).input_value().strip()
+        if deadline_text:
+            try:
+                deadline = datetime.date.fromisoformat(deadline_text)
+                if deadline < datetime.date.today():
+                    raise ReportModificationExpiredError(
+                        f"보고서 수정가능 기한({deadline_text})이 지나 파일첨부 버튼이 "
+                        f"비활성화되어 있습니다. 이 차수를 그대로 편집하는 대신 '새 차수로 "
+                        f"추가'로 진행하세요(새 차수는 기술지도일이 오늘로 자동 설정되어 "
+                        f"기한 안에 들어옵니다)."
+                    )
+            except ValueError:
+                pass  # 날짜 형식이 예상과 다르면 확인을 건너뛰고 그냥 시도한다
+
+        self.log(f"보고서 파일 첨부 중: {file_path}")
         button = page.locator(sel.REPORT_FILE_ATTACH_BUTTON_ID).get_by_text(sel.REPORT_FILE_ATTACH_BUTTON_TEXT)
         self._scroll_into_view(button)
         with page.expect_file_chooser() as fc_info:

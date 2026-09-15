@@ -150,6 +150,11 @@ MAJOR_HAZARD_WORK_OPTIONS = [
 # 스케줄링 시 이 기한 안에 제출해야 함.
 REPORT_FILE_ATTACH_BUTTON_ID = f"{_MODAL_PREFIX}_btn_etcAddTextBoxElement"  # CONFIRMED
 REPORT_FILE_ATTACH_BUTTON_TEXT = "파일첨부"
+# "보고서 수정가능 기한" 표시 필드 -- CONFIRMED(MDFCN_POSBL_YMD = 수정가능일). 이 날짜가
+# 지나면 REPORT_FILE_ATTACH_BUTTON이 비활성화돼 클릭해도 반응이 없다(실사용 중 재현:
+# 기존 차수를 그대로 열어 편집했더니 기한이 지나있어 "파일첨부"를 눌러도 파일선택창이
+# 전혀 안 뜨고 filechooser 이벤트 타임아웃만 남 -- 스크롤 문제가 아니었음).
+REPORT_MODIFIABLE_UNTIL_INPUT_ID = f"{_MODAL_PREFIX}_cal_MDFCN_POSBL_YMD_calendaredit_input"
 
 # 최종 저장(=제출) - 의도적으로 이 파일에 셀렉터를 넣지 않는다.
 # 모든 기능이 검증된 뒤 마지막 단계에서만 추가한다 (README "개발 단계 안내" 참고).

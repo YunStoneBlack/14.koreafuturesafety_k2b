@@ -85,7 +85,13 @@ class MainWindow(QWidget):
         root.addWidget(card3)
 
         action_row = QHBoxLayout()
-        self.new_round_check = QCheckBox("K2B에 이 회차가 아직 없음 (새 차수로 추가)")
+        self.new_round_check = QCheckBox("새 차수로 추가 (K2B에 이 회차가 아직 없음)")
+        self.new_round_check.setChecked(True)  # 기본값 체크 -- 꺼두면 K2B에 현재 열려있는
+        # 기존 차수를 그대로 덮어쓰게 되는데, 12-1의 회차 번호와 K2B의 차수 번호는 서로
+        # 무관한 별개 카운터라 실수로 엉뚱한 기존 데이터를 덮어쓸 위험이 있다(실사용 중
+        # 발견). 게다가 기존 차수는 "보고서 수정가능 기한"(기술지도일+7일)이 이미 지나
+        # 있을 수 있어 파일첨부 자체가 막힌다. 새 차수는 기술지도일이 오늘로 자동
+        # 설정되어 이 문제가 없다 -- 기존 차수를 의도적으로 고칠 때만 체크 해제할 것.
         action_row.addWidget(self.new_round_check)
         action_row.addStretch()
         self.run_btn = QPushButton("K2B 화면에 자동 입력하기")
