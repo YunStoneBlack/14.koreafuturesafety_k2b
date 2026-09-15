@@ -8,11 +8,17 @@ Playwright 자체 Chromium을 사용(CDP로 기존 크롬에 붙는 방식 아�
 누른다. 자동 제출 기능은 다른 모든 동작이 실사용으로 검증된 뒤 가장 마지막에 추가한다
 (README "개발 단계 안내" 참고).
 
+중요(실사용 중 발견): 이 사이트는 Nexacro 기반이라 상세 모달 전체가 하나의 거대한
+절대좌표(absolute positioning) 패널로 그려진다 — 일반적인 `overflow:scroll` 컨테이너가
+아니라서 Playwright의 자동 "스크롤해서 보이게 하기"(`scrollIntoViewIfNeeded`)가 먹히지
+않는다. 화면 아래쪽 요소(사진첨부/보고서 파일첨부 등)를 클릭하기 전에는 반드시
+`_scroll_into_view()`로 실제 마우스 휠 이벤트를 보내 스크롤해야 한다 — 안 그러면
+"Timeout ... waiting for event 'filechooser'"류 오류가 난다(버튼 자체가 화면 밖에 있어
+클릭이 씹힘).
+
 TODO(확인 필요, k2b_selectors.py 주석 참고):
-  - 기술지도일을 오늘이 아닌 날짜로 바꾸는 방법
-  - 통보방법/이전기술지도 이행여부 체크박스의 나머지 옵션 코드 매핑 검증
-  - 사진첨부 버튼 3개가 실제로 현장전경/현장점검/현장개선 중 무엇인지 검증
-  - "파일첨부"(보고서 원본 첨부로 추정) 버튼의 정확한 위치/셀렉터
+  - 기술지도일을 다른 "달"로 바꾸는 방법(같은 달 안에서는 CONFIRMED)
+  - 대형사고 위험작업이 필수인지, "해당없음"으로 건너뛸 수 있는지
 """
 
 from __future__ import annotations
@@ -41,11 +47,28 @@ class K2BClient:
 
     # --- 로그인/이동 ---
 
+    def _scroll_into_view(self, locator, max_attempts: int = 20) -> None:
+        """이 사이트(Nexacro)는 상세 모달 전체가 절대좌표로 배치된 하나의 거대한 패널이라
+        일반적인 `overflow:scroll` 컨테이너가 아니다 -- Playwright의 자동
+        `scrollIntoViewIfNeeded`가 먹히지 않아, 화면 아래쪽 요소를 클릭하기 전에는 실제
+        마우스 휠 이벤트로 스크롤해야 한다(실사용 중 발견: 이 처리 없이 보고서 파일첨부
+        버튼을 클릭했더니 버튼이 화면 밖에 있어 클릭이 씹히고 "filechooser" 이벤트
+        타임아웃 발생). 대상 요소가 뷰포트 안에 들어올 때까지 반복 스크롤한다."""
+        viewport = self.page.viewport_size or {"width": 1280, "height": 800}
+        for _ in range(max_attempts):
+            box = locator.bounding_box()
+            if box is not None and 0 <= box["y"] <= viewport["height"] - 40:
+                return
+            self.page.mouse.move(viewport["width"] // 2, viewport["height"] // 2)
+            self.page.mouse.wheel(0, 500)
+            self.page.wait_for_timeout(150)
+
     def _type_into(self, locator_str: str, text: str) -> None:
         """Nexacro 커스텀 입력창은 값을 통째로 덮어쓰는 `.fill()`을 쓰면 내부 상태와
         어긋나 기존 값 뒤에 이어붙는 현상이 있었다(실사용 중 발견) — 클릭 후 전체선택+삭제로
         비우고, 실제 키보드 입력처럼 한 글자씩 입력(`press_sequentially`)한다."""
         field = self.page.locator(locator_str)
+        self._scroll_into_view(field)
         field.click()
         field.press("Control+A")
         field.press("Delete")
@@ -143,20 +166,28 @@ class K2BClient:
         page = self.page
         if used:
             self.log("비계사용현황 '사용'으로 설정 중...")
-            page.get_by_text(sel.SCAFFOLD_USAGE_RADIO_GROUP_TEXT["사용"], exact=True).click()
+            radio = page.get_by_text(sel.SCAFFOLD_USAGE_RADIO_GROUP_TEXT["사용"], exact=True)
+            self._scroll_into_view(radio)
+            radio.click()
             for t in types or []:
                 checkbox_id = sel.SCAFFOLD_TYPE_CHECKBOX_IDS.get(t)
                 if checkbox_id is None:
                     raise ValueError(f"알 수 없는 비계종류: {t}")
-                page.locator(checkbox_id).click()
+                checkbox = page.locator(checkbox_id)
+                self._scroll_into_view(checkbox)
+                checkbox.click()
         else:
             self.log("비계사용현황 '미사용'으로 설정 중...")
-            page.get_by_text(sel.SCAFFOLD_USAGE_RADIO_GROUP_TEXT["미사용"], exact=True).click()
+            radio = page.get_by_text(sel.SCAFFOLD_USAGE_RADIO_GROUP_TEXT["미사용"], exact=True)
+            self._scroll_into_view(radio)
+            radio.click()
 
     def select_current_process(self, process_name: str) -> None:
         self.log(f"현재 작업공정 '{process_name}' 선택 중...")
         page = self.page
-        page.locator(sel.CURRENT_PROCESS_DROPDOWN_ID).click()
+        dropdown = page.locator(sel.CURRENT_PROCESS_DROPDOWN_ID)
+        self._scroll_into_view(dropdown)
+        dropdown.click()
         page.get_by_text(process_name).click()
 
     def check_notification_method(self, method: str) -> None:
@@ -165,7 +196,9 @@ class K2BClient:
         if checkbox_id is None:
             raise ValueError(f"알 수 없는 통보방법: {method}")
         self.log(f"통보방법 '{method}' 체크 중...")
-        self.page.locator(checkbox_id).click()
+        checkbox = self.page.locator(checkbox_id)
+        self._scroll_into_view(checkbox)
+        checkbox.click()
 
     def check_prev_guidance_implemented(self, status: str) -> None:
         """status: '이행' | '불이행' | '해당없음' (세 옵션 모두 실제 클릭으로 CONFIRMED)"""
@@ -173,14 +206,15 @@ class K2BClient:
         if checkbox_id is None:
             raise ValueError(f"알 수 없는 이행여부: {status}")
         self.log(f"이전 기술지도 이행여부 '{status}' 체크 중...")
-        self.page.locator(checkbox_id).click()
+        checkbox = self.page.locator(checkbox_id)
+        self._scroll_into_view(checkbox)
+        checkbox.click()
 
     def attach_photos(self, category: str, file_paths: list[str | Path]) -> None:
         """category: '현장전경' | '현장점검' | '현장개선'
 
-        사진첨부 버튼 클릭 -> 파일 선택창(file chooser)에서 다중 파일 선택.
-        버튼 3개 중 어느 게 어느 카테고리인지는 아직 화면 재확인 필요(TODO).
-        """
+        사진첨부 버튼 클릭 -> 파일 선택창(file chooser)에서 다중 파일 선택(CONFIRMED,
+        실제 파일 업로드까지 end-to-end 검증됨)."""
         button_id = sel.PHOTO_ATTACH_BUTTON_IDS.get(category)
         if button_id is None:
             raise ValueError(f"알 수 없는 사진 카테고리: {category}")
@@ -188,8 +222,10 @@ class K2BClient:
             return
         self.log(f"{category} 사진 {len(file_paths)}장 첨부 중...")
         page = self.page
+        button = page.locator(button_id).get_by_text(sel.PHOTO_ATTACH_BUTTON_TEXT)
+        self._scroll_into_view(button)
         with page.expect_file_chooser() as fc_info:
-            page.locator(button_id).get_by_text(sel.PHOTO_ATTACH_BUTTON_TEXT).click()
+            button.click()
         file_chooser = fc_info.value
         file_chooser.set_files([str(p) for p in file_paths])
 
@@ -204,8 +240,11 @@ class K2BClient:
             raise ValueError(f"알 수 없는 대형사고 위험작업 종류: {option}")
         self.log(f"대형사고 위험작업 '{option}' 추가 중...")
         page = self.page
-        page.locator(sel.MAJOR_HAZARD_WORK_ADD_BUTTON_ID).get_by_text("추가").click()
+        add_button = page.locator(sel.MAJOR_HAZARD_WORK_ADD_BUTTON_ID).get_by_text("추가")
+        self._scroll_into_view(add_button)
+        add_button.click()
         select_cell = page.get_by_text("선택", exact=True).first
+        self._scroll_into_view(select_cell)
         select_cell.click()
         select_cell.click()
         page.get_by_text(option, exact=True).click()
@@ -217,8 +256,10 @@ class K2BClient:
         불가능해진다 -- 제출 자동화는 이 기한 안에 실행되어야 한다."""
         self.log(f"보고서 파일 첨부 중: {file_path}")
         page = self.page
+        button = page.locator(sel.REPORT_FILE_ATTACH_BUTTON_ID).get_by_text(sel.REPORT_FILE_ATTACH_BUTTON_TEXT)
+        self._scroll_into_view(button)
         with page.expect_file_chooser() as fc_info:
-            page.locator(sel.REPORT_FILE_ATTACH_BUTTON_ID).get_by_text(sel.REPORT_FILE_ATTACH_BUTTON_TEXT).click()
+            button.click()
         file_chooser = fc_info.value
         file_chooser.set_files(str(file_path))
 
