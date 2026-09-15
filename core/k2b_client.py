@@ -24,6 +24,7 @@ TODO(확인 필요, k2b_selectors.py 주석 참고):
 from __future__ import annotations
 
 import datetime
+import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -293,17 +294,43 @@ class K2BClient:
     # 최종 저장(제출) 메서드는 의도적으로 아직 없음. README "개발 단계 안내" 참고.
 
 
+def _find_system_chrome() -> str | None:
+    """고객 PC에 이미 설치된 구글 크롬 실행파일을 찾는다.
+
+    exe로 배포할 때 Playwright 번들 Chromium(150MB+)을 통째로 넣지 않기 위해, 가능하면
+    시스템에 이미 있는 크롬을 그대로 제어한다(`chromium.launch(executable_path=...)`).
+    못 찾으면 None을 반환하고, 그때는 Playwright 번들 Chromium으로 폴백한다(로컬 개발
+    환경엔 `playwright install chromium`으로 이미 설치돼 있어 그대로 동작함)."""
+    candidates = [
+        Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+        Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+    ]
+    for path in candidates:
+        if path.exists():
+            return str(path)
+    return None
+
+
 def open_browser(headless: bool = False):
-    """Playwright 컨텍스트 매니저를 직접 열어야 할 때 쓰는 헬퍼.
+    """Playwright를 시작하고 브라우저/페이지를 연다.
 
     사용 예:
-        with open_browser() as (playwright, browser, page):
+        playwright, browser, page = open_browser()
+        try:
             client = K2BClient(page, log=print)
             client.login(user_id, password)
             ...
+        finally:
+            browser.close()
+            playwright.stop()
     """
     playwright = sync_playwright().start()
-    browser = playwright.chromium.launch(headless=headless)
+    chrome_path = _find_system_chrome()
+    launch_kwargs = {"headless": headless}
+    if chrome_path:
+        launch_kwargs["executable_path"] = chrome_path
+    browser = playwright.chromium.launch(**launch_kwargs)
     context = browser.new_context()
     page = context.new_page()
     return playwright, browser, page

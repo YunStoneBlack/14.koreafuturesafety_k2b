@@ -61,6 +61,21 @@ def _connect_readonly(db_path: str | Path) -> sqlite3.Connection:
     return conn
 
 
+def _resolve_path(db_path: str | Path, stored: str) -> str:
+    """DB에 저장된 파일 경로를 실제 경로로 바꾼다.
+
+    개발 중인 12-1 DB는 절대경로를 그대로 쓰지만(예: "C:\\Users\\...\\report_6.pdf"),
+    exe 배포판에 같이 넣는 데모 DB는 폴더째로 옮겨도 안 깨지도록 **DB 파일 기준 상대경로**
+    (예: "report_6.pdf")로 저장해둔다. 절대경로면 그대로, 상대경로면 db_path의 폴더
+    기준으로 풀어서 반환한다."""
+    if not stored:
+        return ""
+    p = Path(stored)
+    if p.is_absolute():
+        return stored
+    return str((Path(db_path).parent / p).resolve())
+
+
 def get_submission_data(
     db_path: str | Path, site_name: str, visit_no: int | None = None
 ) -> K2BSubmissionData | None:
@@ -113,7 +128,7 @@ def get_submission_data(
         ).fetchone()["cnt"]
 
         overview_photos = [
-            row["photo_path"]
+            _resolve_path(db_path, row["photo_path"])
             for row in conn.execute(
                 """SELECT photo_path FROM overview_photo
                    WHERE report_id = ? AND photo_path != '' ORDER BY slot""",
@@ -121,7 +136,7 @@ def get_submission_data(
             )
         ]
         inspection_photos = [
-            row["photo_path"]
+            _resolve_path(db_path, row["photo_path"])
             for row in conn.execute(
                 """SELECT photo_path FROM inspection_photo
                    WHERE report_id = ? AND photo_path != '' ORDER BY slot""",
@@ -130,8 +145,8 @@ def get_submission_data(
         ]
 
         prev_implemented = report_row["prev_guidance_implemented"]
-        report_pdf_path = report_row["pdf_path"] or ""
-        report_hwpx_path = report_row["hwpx_path"] or ""
+        report_pdf_path = _resolve_path(db_path, report_row["pdf_path"] or "")
+        report_hwpx_path = _resolve_path(db_path, report_row["hwpx_path"] or "")
         report_file_path = report_pdf_path  # CONFIRMED: K2B는 PDF만 받음(HWP/HWPX 첨부 불가)
 
         return K2BSubmissionData(

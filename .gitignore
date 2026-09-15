@@ -6,3 +6,5 @@ data/recorded_*.py
 data/*.png
 .gui_assets/
 .env
+build/
+packaging/*.spec
