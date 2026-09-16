@@ -6,6 +6,8 @@ Playwright(sync API)를 Qt 메인 스레드에서 직접 돌리면 UI가 멈추�
 직접 확인 후 수동으로 저장하거나 창을 닫으면 된다."""
 from __future__ import annotations
 
+import datetime
+
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from core.db_reader import K2BSubmissionData
@@ -40,6 +42,8 @@ class K2BFillWorker(QThread):
             if self.is_new_round:
                 client.add_new_round()
 
+            if d.guidance_date:
+                client.set_guidance_date(datetime.date.fromisoformat(d.guidance_date))
             if d.progress_rate is not None:
                 client.fill_progress_rate(d.progress_rate)
             if d.site_manager_name:
@@ -52,9 +56,20 @@ class K2BFillWorker(QThread):
                 client.select_current_process(d.current_process_name)
             if d.notification_method:
                 client.check_notification_method(d.notification_method)
+            if d.scaffold_usage is not None:
+                client.set_scaffold_usage(d.scaffold_usage == "사용", d.scaffold_types)
             if d.prev_guidance_implemented is not None:
                 status = "이행" if d.prev_guidance_implemented else "불이행"
                 client.check_prev_guidance_implemented(status)
+            if d.bad_site_notify:
+                client.notify_bad_site(d.bad_site_notify_content, d.bad_site_notify_files)
+            for hazard in d.major_hazard_works:
+                client.add_major_hazard_work(
+                    hazard.occurrence_type,
+                    hazard.hazard_work,
+                    datetime.date.fromisoformat(hazard.start_date),
+                    datetime.date.fromisoformat(hazard.end_date),
+                )
             # 점검자는 로그인 계정 이름으로 고정되는 readonly 필드라 자동입력 안 함
             # -- 작업내용.md "GUI TODO: 로그인 계정 관리 화면" 참고(보류 중).
 
@@ -62,6 +77,8 @@ class K2BFillWorker(QThread):
                 client.attach_photos("현장전경", d.overview_photo_paths)
             if d.inspection_photo_paths:
                 client.attach_photos("현장점검", d.inspection_photo_paths)
+            if d.improvement_photo_paths:
+                client.attach_photos("현장개선", d.improvement_photo_paths)
             if d.report_file_path:
                 client.attach_report_file(d.report_file_path)
 

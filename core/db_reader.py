@@ -18,6 +18,18 @@ from pathlib import Path
 
 
 @dataclass
+class MajorHazardWork:
+    """대형사고 위험작업 한 행. "업무영역"은 K2B가 행 추가 시 자동으로 채우는 고정값이라
+    (실화면 확인) 여기서 다루지 않는다 -- 발생형태/위험작업 종류/예정시기(시작~종료)만
+    사람이 앱에서 직접 고른다."""
+
+    occurrence_type: str  # 발생형태: 전체/붕괴/도괴/낙하/질식 중 하나
+    hazard_work: str  # k2b_selectors.MAJOR_HAZARD_WORK_OPTIONS 중 하나
+    start_date: str  # YYYY-MM-DD
+    end_date: str  # YYYY-MM-DD
+
+
+@dataclass
 class K2BSubmissionData:
     # --- 12-1 DB에서 그대로 가져오는 값 ---
     site_name: str = ""
@@ -37,6 +49,7 @@ class K2BSubmissionData:
     prev_guidance_implemented: bool | None = None  # 이전 기술지도 이행여부
     overview_photo_paths: list[str] = field(default_factory=list)  # 현장전경 사진
     inspection_photo_paths: list[str] = field(default_factory=list)  # 현장점검 사진
+    improvement_photo_paths: list[str] = field(default_factory=list)  # 현장개선 사진
 
     # 보고서 파일 -- K2B는 HWP/HWPX 첨부가 안 되고 PDF만 받는 것으로 실사용 중 확인됨
     # (CONFIRMED). report_file_path는 항상 report_pdf_path를 쓴다. report_hwpx_path는
@@ -45,13 +58,19 @@ class K2BSubmissionData:
     report_hwpx_path: str = ""
     report_file_path: str = ""  # = report_pdf_path (K2B는 PDF만 받음, CONFIRMED)
 
-    # --- 12-1 DB에 대응 항목이 없어 K2B 화면에서 직접 확인/입력해야 하는 값 ---
+    # --- 12-1 DB에 대응 항목이 없어(또는 보고서 문구가 K2B 옵션과 안 맞아) 앱 화면에서
+    # 직접 선택해야 하는 값. main_window.py의 UI가 이 필드들을 직접 채운다. ---
     guidance_count: int | None = None  # 지도건수 -- 대응 컬럼 없음
-    scaffold_usage: str | None = None  # 비계사용현황(사용/미사용) -- 대응 컬럼 없음
-    scaffold_type: str | None = None  # 비계종류 -- 대응 컬럼 없음
+    scaffold_usage: str | None = None  # "사용" | "미사용" | None(선택 안 함)
+    scaffold_types: list[str] = field(default_factory=list)  # 비계종류(강관비계/시스템비계), 사용일 때만 의미 있음
     owner_notify_date: str | None = None  # 건설공사 발주자 통보일자 -- 대응 컬럼 없음
     hq_notify_quarter: str | None = None  # 경영책임자/건설업체 본사 통보 분기 -- 대응 컬럼 없음
-    major_hazard_work: list | None = None  # 대형사고 위험작업(업무영역/발생형태/예정시기) -- 화면에서 개별 선택 필요
+    major_hazard_works: list[MajorHazardWork] = field(default_factory=list)  # 대형사고 위험작업
+
+    # 불량사업장 통보 -- 보고서와 연동되지 않아 앱에서 직접 체크/입력.
+    bad_site_notify: bool = False
+    bad_site_notify_content: str = ""
+    bad_site_notify_files: list[str] = field(default_factory=list)  # jpg/jpeg/gif/png/bmp/pdf만 허용(K2B 제약)
 
 
 def _connect_readonly(db_path: str | Path) -> sqlite3.Connection:
@@ -143,6 +162,17 @@ def get_submission_data(
                 (report_id,),
             )
         ]
+        # 현장개선사진 = "이전지적사항"의 조치완료 증빙사진(previous_finding.completion_photo_path).
+        # 12-1의 보고서 생성 코드도 result_status와 무관하게 이 값이 있으면 그대로 삽입하므로
+        # (report_builder_hwpx_images.py 참고) 여기서도 값 존재 여부만으로 필터링한다.
+        improvement_photos = [
+            _resolve_path(db_path, row["completion_photo_path"])
+            for row in conn.execute(
+                """SELECT completion_photo_path FROM previous_finding
+                   WHERE report_id = ? AND completion_photo_path != '' ORDER BY slot""",
+                (report_id,),
+            )
+        ]
 
         prev_implemented = report_row["prev_guidance_implemented"]
         report_pdf_path = _resolve_path(db_path, report_row["pdf_path"] or "")
@@ -167,6 +197,7 @@ def get_submission_data(
             prev_guidance_implemented=bool(prev_implemented) if prev_implemented is not None else None,
             overview_photo_paths=overview_photos,
             inspection_photo_paths=inspection_photos,
+            improvement_photo_paths=improvement_photos,
             report_pdf_path=report_pdf_path,
             report_hwpx_path=report_hwpx_path,
             report_file_path=report_file_path,
