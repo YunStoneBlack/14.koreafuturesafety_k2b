@@ -48,7 +48,10 @@ class K2BSubmissionData:
     notification_method: str = ""  # 직접전달/등기우편/전자우편/모바일/기타
     prev_guidance_implemented: bool | None = None  # 이전 기술지도 이행여부
     overview_photo_paths: list[str] = field(default_factory=list)  # 현장전경 사진
-    inspection_photo_paths: list[str] = field(default_factory=list)  # 현장점검 사진
+    # 현장점검 사진 -- K2B엔 "지적사항 전용" 칸이 없어서 점검사진뿐 아니라 이전지적사항
+    # 원본사진/이번 회차 지적사항 사진/TBM 교육사진/계측기 사진까지 전부 여기 합쳐서
+    # 담는다(get_submission_data() 참고, 2026-09-17 CONFIRMED).
+    inspection_photo_paths: list[str] = field(default_factory=list)
     improvement_photo_paths: list[str] = field(default_factory=list)  # 현장개선 사진
 
     # 보고서 파일 -- K2B는 HWP/HWPX 첨부가 안 되고 PDF만 받는 것으로 실사용 중 확인됨
@@ -154,11 +157,51 @@ def get_submission_data(
                 (report_id,),
             )
         ]
+        # 현장점검사진 = 12-1의 점검사진(inspection_photo) 하나가 아니라, K2B에 실제로는
+        # "현장 방문 중 찍은 사진 전부"가 이 칸에 뭉뚱그려 올라간다는 걸 사용자가 실제
+        # K2B 화면(기존 저장된 차수)을 보여주며 확인해줌(2026-09-17, CONFIRMED) -- K2B엔
+        # 애초에 "지적사항 전용" 사진칸이 따로 없다(현장전경/현장점검/현장개선 3개뿐,
+        # k2b_selectors.PHOTO_ATTACH_BUTTON_IDS 참고). 그래서 아래 5개 출처를 전부 합쳐서
+        # 하나의 리스트로 만든다: (1)점검사진 자체 (2)이전지적사항 원본 사진(이행결과
+        # 증빙사진인 completion_photo_path와는 다른 컬럼) (3)이번 회차 지적사항 사진
+        # (4)TBM 교육사진 (5)계측기 사진(7종 전부, 종류 안 가림).
         inspection_photos = [
             _resolve_path(db_path, row["photo_path"])
             for row in conn.execute(
                 """SELECT photo_path FROM inspection_photo
                    WHERE report_id = ? AND photo_path != '' ORDER BY slot""",
+                (report_id,),
+            )
+        ]
+        inspection_photos += [
+            _resolve_path(db_path, row["photo_path"])
+            for row in conn.execute(
+                """SELECT photo_path FROM previous_finding
+                   WHERE report_id = ? AND photo_path != '' ORDER BY slot""",
+                (report_id,),
+            )
+        ]
+        inspection_photos += [
+            _resolve_path(db_path, row["photo_path"])
+            for row in conn.execute(
+                """SELECT photo_path FROM finding
+                   WHERE report_id = ? AND photo_path != '' ORDER BY slot""",
+                (report_id,),
+            )
+        ]
+        inspection_photos += [
+            _resolve_path(db_path, row["photo_path"])
+            for row in conn.execute(
+                """SELECT photo_path FROM safety_education
+                   WHERE report_id = ? AND photo_path != ''""",
+                (report_id,),
+            )
+        ]
+        inspection_photos += [
+            _resolve_path(db_path, row["photo_path"])
+            for row in conn.execute(
+                """SELECT photo_path FROM measurement
+                   WHERE report_id = ? AND photo_path != '' ORDER BY id""",
                 (report_id,),
             )
         ]

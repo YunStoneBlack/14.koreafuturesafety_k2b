@@ -62,3 +62,20 @@ venv/Scripts/python.exe -m playwright install chromium
 ```bash
 venv/Scripts/python.exe -m core.credentials set
 ```
+
+## 배포(담당요원 PC) — 폴더 배치 규칙 (중요, 2026-09-17 확정)
+
+담당요원 각자 PC에서 "12-1(보고서 작성) → 14(K2B 제출)"를 한 흐름으로 쓰는 게 목표라,
+**두 exe를 반드시 같은 상위 폴더 밑에 나란히 설치**해야 한다:
+
+```
+아무 상위 폴더\
+  한국미래안전_기술지도결과보고서\   ← 12-1 dist 폴더 그대로
+  한국미래안전_K2B자동제출\          ← 14 dist 폴더 그대로
+```
+
+`core/config.py`가 frozen(exe) 상태에서 자기 폴더의 부모 밑에 위 12-1 폴더 이름이
+있는지 찾아 그 안의 실제 `data/app.db`를 사용한다(폴더 이름이 12-1
+`packaging/build_exe.py`의 `APP_NAME`과 정확히 일치해야 함). 이 폴더를 못 찾으면
+exe에 번들된 데모 DB(`packaging/build_demo_data.py`로 생성)로 대체된다 — 12-1 없이
+14만 영업용으로 보여줄 때를 위한 fallback이다.

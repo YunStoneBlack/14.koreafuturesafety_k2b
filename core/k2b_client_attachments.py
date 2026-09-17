@@ -50,11 +50,18 @@ class AttachmentMixin(K2BClientBase):
                 button.click()
             fc_info.value.set_files([str(p) for p in file_paths])
 
+    # K2B 자체 제약(실사용 중 발견, CONFIRMED, 2026-09-17): 파일선택창 한 번에 5개 이상
+    # 고르면 "5건 이상의 파일 업로드는 허용되지 않습니다" 팝업으로 거부하고 아무것도
+    # 첨부되지 않는다(부분첨부 아님, 전체 취소). "지적사항 사진" 등을 현장점검사진에
+    # 합쳐 올리게 되면서(db_reader.py 참고) 4장을 넘는 경우가 실제로 생겨 발견함.
+    # 그래서 한 번에 최대 4개씩 나눠 "사진첨부" 버튼을 여러 번 눌러 첨부한다.
+    _MAX_FILES_PER_ATTACH = 4
+
     def attach_photos(self, category: str, file_paths: list[str | Path]) -> None:
         """category: '현장전경' | '현장점검' | '현장개선'
 
         사진첨부 버튼 클릭 -> 파일 선택창(file chooser)에서 다중 파일 선택(CONFIRMED,
-        실제 파일 업로드까지 end-to-end 검증됨)."""
+        실제 파일 업로드까지 end-to-end 검증됨). 4장 초과 시 자동으로 여러 번 나눠 누른다."""
         button_id = sel.PHOTO_ATTACH_BUTTON_IDS.get(category)
         if button_id is None:
             raise ValueError(f"알 수 없는 사진 카테고리: {category}")
@@ -63,11 +70,13 @@ class AttachmentMixin(K2BClientBase):
         self.log(f"{category} 사진 {len(file_paths)}장 첨부 중...")
         page = self.page
         button = page.locator(button_id).get_by_text(sel.PHOTO_ATTACH_BUTTON_TEXT)
-        self._scroll_into_view(button)
-        with page.expect_file_chooser() as fc_info:
-            button.click()
-        file_chooser = fc_info.value
-        file_chooser.set_files([str(p) for p in file_paths])
+        for i in range(0, len(file_paths), self._MAX_FILES_PER_ATTACH):
+            chunk = file_paths[i : i + self._MAX_FILES_PER_ATTACH]
+            self._scroll_into_view(button)
+            with page.expect_file_chooser() as fc_info:
+                button.click()
+            file_chooser = fc_info.value
+            file_chooser.set_files([str(p) for p in chunk])
 
     def attach_report_file(self, file_path: str | Path) -> None:
         """12-1에서 생성된 실제 결과보고서(PDF/hwpx) 파일을 "보고서" 섹션에 첨부한다.
