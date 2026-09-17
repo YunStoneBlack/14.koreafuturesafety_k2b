@@ -25,6 +25,18 @@ class K2BFillWorker(QThread):
         self.password = password
         self.data = data
         self.is_new_round = is_new_round
+        self._stop_requested = False
+
+    def request_stop(self) -> None:
+        """"중단" 버튼에서 호출. Playwright sync API는 그걸 생성한 스레드에서만 다뤄야
+        하므로(공식 제약), 이 워커 스레드 밖에서 직접 browser.close()를 부르지 않고
+        플래그만 세운다 -- run() 안에서 이 스레드가 직접 감지해 스스로 정리한다."""
+        self._stop_requested = True
+
+    def _stopped(self) -> bool:
+        if self._stop_requested:
+            self.log_message.emit("사용자 요청으로 중단합니다.")
+        return self._stop_requested
 
     def run(self) -> None:
         playwright = browser = None
@@ -34,10 +46,14 @@ class K2BFillWorker(QThread):
             d = self.data
 
             client.login(self.user_id, self.password)
+            if self._stopped():
+                return
             client.go_to_guidance_menu()
             client.search_site(d.site_name)
             client.select_result_row(d.site_name)
             client.open_detail()
+            if self._stopped():
+                return
 
             if self.is_new_round:
                 client.add_new_round()
@@ -73,6 +89,9 @@ class K2BFillWorker(QThread):
             # 점검자는 로그인 계정 이름으로 고정되는 readonly 필드라 자동입력 안 함
             # -- 작업내용.md "GUI TODO: 로그인 계정 관리 화면" 참고(보류 중).
 
+            if self._stopped():
+                return
+
             if d.overview_photo_paths:
                 client.attach_photos("현장전경", d.overview_photo_paths)
             if d.inspection_photo_paths:
@@ -87,8 +106,9 @@ class K2BFillWorker(QThread):
             self.log_message.emit("이 창은 자동으로 닫히지 않습니다 -- 확인 후 직접 닫으세요.")
             self.finished_ok.emit()
 
-            # 사용자가 브라우저에서 직접 확인/조작할 시간을 준다. 창을 닫을 때까지 대기.
-            while browser.is_connected():
+            # 사용자가 브라우저에서 직접 확인/조작할 시간을 준다. 창을 닫거나 "중단"을
+            # 누를 때까지 대기.
+            while browser.is_connected() and not self._stop_requested:
                 self.msleep(1000)
         except Exception as e:  # noqa: BLE001 -- 워커 스레드 최상위, UI로 실패를 알려야 함
             self.failed.emit(str(e))

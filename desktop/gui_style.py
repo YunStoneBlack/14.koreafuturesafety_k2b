@@ -116,6 +116,19 @@ QPushButton#SecondaryButton {
 QPushButton#SecondaryButton:hover:!disabled { background-color: #EEEAF9; }
 QPushButton#SecondaryButton:disabled { color: #A79FC0; }
 
+QPushButton#DangerButton {
+    background-color: #FFFFFF;
+    color: #D14343;
+    border: 1px solid #F3C6C6;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+}
+QPushButton#DangerButton:hover:!disabled { background-color: #FDEDED; }
+QPushButton#DangerButton:disabled { color: #C9A9A9; border: 1px solid #EEE0E0; }
+
+QLabel#WarningLabel { color: #D14343; font-size: 12px; font-weight: 600; }
+
 QProgressBar {
     border: none;
     border-radius: 8px;

@@ -10,11 +10,18 @@ import sys
 
 from PyQt6.QtWidgets import QApplication
 
+from desktop.gui_style import build_style_sheet
 from desktop.main_window import MainWindow
 
 
 def main() -> None:
     app = QApplication(sys.argv)
+    # 앱(QApplication) 레벨로 스타일시트를 적용한다 -- 위젯 레벨(MainWindow 등)에만
+    # 걸면 그 위젯의 자식(parent-child)에만 상속되는데, 계정관리/신규현장/기존현장 모달을
+    # "메인 창을 독립적으로 옮길 수 있게" 부모 없이(parent=None) 띄우도록 바꾸면서
+    # (2026-09-17) 그 모달들이 스타일을 하나도 못 받는 문제가 생겼음(실사용 중 발견).
+    # 앱 전체에 적용하면 부모 유무와 무관하게 모든 창에 일관되게 먹는다.
+    app.setStyleSheet(build_style_sheet())
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
